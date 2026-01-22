@@ -7,6 +7,7 @@ Upload audio files, run processing jobs, and download results.
 
 import argparse
 import glob
+import json
 import os
 import sys
 import time
@@ -44,18 +45,19 @@ AUDIO_EXTENSIONS = {".mp3", ".wav", ".flac", ".aac", ".aiff", ".aif", ".mp4", ".
 # | other            | Remaining instrumentation after main stems removed   | -             |
 # | other-x-guitar   | Residual after removing vocals, drums, bass, guitar  | -             |
 #
-# DIALOGUE, MUSIC & EFFECTS (1.5 credits/min, max 3 hours)
+# DIALOGUE, MUSIC & EFFECTS (1.5 credits/min, max 3 hours unless noted)
 # Isolate voices or remove background elements for film, TV, and dubbing.
 #
-# | Model Key        | Description                                          | Credits/Min   |
-# |------------------|------------------------------------------------------|---------------|
-# | dialogue         | Isolates speech/vocals from other sounds             | 1.5           |
-# | effects          | Retains ambience, sound effects, environmental noise | 1.5           |
-# | music_fx         | Background stem (music + effects, no dialogue)       | 1.5           |
-# | music_detection  | Detects portions containing music                    | 0.5           |
+# | Model Key        | Description                                          | Credits/Min | Max Length |
+# |------------------|------------------------------------------------------|-------------|------------|
+# | dialogue         | Isolates speech/vocals from other sounds             | 1.5         | 3 Hours    |
+# | effects          | Retains ambience, sound effects, environmental noise | 1.5         | 3 Hours    |
+# | music_removal    | Removes music, retains dialogue/effects/natural sound| N/A         | 1 Hour     |
+# | music_fx         | Background stem (music + effects, no dialogue)       | 1.5         | 3 Hours    |
+# | music_detection  | Detects portions containing music                    | 0.5         | 3 Hours    |
 #
-# Note: music_removal and multi_voice are NOT available via /tasks API.
-#       Contact support@audioshake.ai for access.
+# Note: music_removal and multi_voice require access request.
+#       Contact support@audioshake.ai to enable these models.
 #
 # TRANSCRIPTION & ALIGNMENT (1 credit/min, max 1 hour)
 # Convert spoken content into synchronized text and timestamps.
@@ -102,8 +104,10 @@ AVAILABLE_MODELS = {
     # Dialogue, Music & Effects
     "dialogue": "Isolates speech/vocals from other sounds",
     "effects": "Ambience, sound effects, environmental noise",
+    "music_removal": "Removes music, retains dialogue/effects/natural sound (request access: support@audioshake.ai)",
     "music_fx": "Background stem (music + effects, no dialogue)",
     "music_detection": "Detects portions containing music",
+    "multi_voice": "Separates dialogue from multiple speakers (variants: two_speaker, n_speaker)",
     # Transcription & Alignment
     "transcription": "Text representation of spoken words",
     "alignment": "Synchronization of audio and text",
@@ -113,6 +117,7 @@ AVAILABLE_MODELS = {
 MODEL_VARIANTS = {
     "vocals": ["high_quality"],
     "instrumental": ["high_quality"],
+    "multi_voice": ["two_speaker", "n_speaker"],
 }
 
 
@@ -435,8 +440,8 @@ def create_parser() -> argparse.ArgumentParser:
     for m in stem_models:
         models_help += f"    {m:18} - {AVAILABLE_MODELS[m]}\n"
     
-    models_help += "\n  DIALOGUE, MUSIC & EFFECTS (1.5 cr/min, max 3h):\n"
-    dme_models = ["dialogue", "effects", "music_fx", "music_detection"]
+    models_help += "\n  DIALOGUE, MUSIC & EFFECTS (1.5 cr/min, max 3h unless noted):\n"
+    dme_models = ["dialogue", "effects", "music_removal", "music_fx", "music_detection", "multi_voice"]
     for m in dme_models:
         models_help += f"    {m:18} - {AVAILABLE_MODELS[m]}\n"
     
@@ -448,6 +453,8 @@ def create_parser() -> argparse.ArgumentParser:
     models_help += "\n  VARIANTS (use with --variant):\n"
     models_help += "    vocals --variant high_quality       - Higher quality (1.5 cr/min)\n"
     models_help += "    instrumental --variant high_quality - Higher quality (1.5 cr/min)\n"
+    models_help += "    multi_voice --variant two_speaker   - Optimized for 2 speakers (default)\n"
+    models_help += "    multi_voice --variant n_speaker     - Stems for any number of speakers\n"
     
     parser = argparse.ArgumentParser(
         prog="audioshake_cli",
@@ -699,6 +706,10 @@ def run_process_mode(
         print("Waiting for task to complete...")
         completed_task = client.wait_for_task(task_id)
         
+        print("\nTask result JSON:")
+        print(json.dumps(completed_task, indent=2))
+        print()
+        
         print("Downloading results...")
         downloaded = client.download_outputs(
             completed_task, output_dir,
@@ -827,6 +838,10 @@ def _process_single_file(
         
         print("Waiting for task to complete...")
         completed_task = client.wait_for_task(task_id)
+        
+        print("\nTask result JSON:")
+        print(json.dumps(completed_task, indent=2))
+        print()
         
         print("Downloading results...")
         downloaded = client.download_outputs(
